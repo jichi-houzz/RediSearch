@@ -451,7 +451,7 @@ eof:
 int II_HasNext(void *ctx) {
   IntersectContext *ic = ctx;
   // printf("%p %d\n", ic, ic->atEnd);
-  return ic->atEnd;
+  return !ic->atEnd;
 }
 
 t_docId II_LastDocId(void *ctx) {
