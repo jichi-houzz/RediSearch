@@ -7,9 +7,9 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
-
 #include <sys/param.h>
 #include "rmalloc.h"
+
 
 inline t_docId UI_LastDocId(void *ctx) {
   return ((UnionContext *)ctx)->minDocId;
@@ -68,7 +68,7 @@ inline int UI_Read(void *ctx, RSIndexResult **hit) {
   do {
 
     // find the minimal iterator
-    t_docId minDocId = __UINT32_MAX__;
+    t_docId minDocId = UINT32_MAX;
     int minIdx = -1;
     numActive = 0;
     int rc = INDEXREAD_EOF;
@@ -157,7 +157,7 @@ int UI_SkipTo(void *ctx, uint32_t docId, RSIndexResult **hit) {
   int rc = INDEXREAD_EOF;
   const int num = ui->num;
   const int quickExit = ui->quickExit;
-  t_docId minDocId = __UINT32_MAX__;
+  t_docId minDocId = UINT32_MAX;
   IndexIterator *it;
   RSIndexResult *res;
   // skip all iterators to docId
@@ -351,18 +351,17 @@ int II_SkipTo(void *ctx, uint32_t docId, RSIndexResult **hit) {
     }
   }
 
-  if (nfound == ic->num) {
-    if (hit) {
-      *hit = ic->current;
-    }
-    return INDEXREAD_OK;
-  }
-  // we add the actual last doc id we read, so if anyone is looking at what we returned it would
-  // look sane
+  // unless we got an EOF - we put the current record into hit
   if (hit) {
-    (*hit)->docId = 0;  // ic->lastDocId;
+    *hit = ic->current;
   }
 
+  // if the requested id was found on all children - we return OK
+  if (nfound == ic->num) {
+    return INDEXREAD_OK;
+  }
+
+  // otherwise - not found
   return INDEXREAD_NOTFOUND;
 }
 

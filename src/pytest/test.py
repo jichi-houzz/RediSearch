@@ -72,9 +72,9 @@ class SearchTestCase(ModuleTestCase('../redisearch.so')):
                 self.assertEqual(50, res[0])
 
                 res = r.execute_command(
-                    'ft.search', 'idx', '(hello|world)(hallo|werld)', 'nocontent', 'verbatim', 'limit', '0', '100')
-                self.assertEqual(1, len(res))
-                self.assertEqual(0, res[0])
+                    'ft.search', 'idx', '(hello world)|((hello world)|(hallo world|werld) | hello world werld)', 'nocontent', 'verbatim', 'limit', '0', '100')
+                self.assertEqual(51, len(res))
+                self.assertEqual(50, res[0])
 
     def testSearch(self):
         with self.redis() as r:
@@ -473,6 +473,36 @@ class SearchTestCase(ModuleTestCase('../redisearch.so')):
             self.assertEqual(r.execute_command(
                 'ft.search', 'idx', 'constant -(term0|term1|term2|term3|term4|nothing)', 'nocontent'), [0])
             # self.assertEqual(r.execute_command('ft.search', 'idx', 'constant -(term1 term2)', 'nocontent')[0], N)
+
+    def testNestedIntersection(self):
+        with self.redis() as r:
+            r.flushdb()
+            self.assertOk(r.execute_command(
+                'ft.create', 'idx', 'schema', 'a', 'text', 'b', 'text', 'c', 'text', 'd', 'text'))
+            for i in range(20):
+                self.assertOk(r.execute_command('ft.add', 'idx', 'doc%d' % i, 1.0, 'fields',
+                                                'a', 'foo', 'b', 'bar', 'c', 'baz', 'd', 'gaz'))
+            res = [
+                r.execute_command('ft.search', 'idx', 'foo bar baz gaz', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@a:foo @b:bar @c:baz @d:gaz', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@b:bar @a:foo @c:baz @d:gaz', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@c:baz @b:bar @a:foo @d:gaz', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@d:gaz @c:baz @b:bar @a:foo', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@a:foo (@b:bar (@c:baz @d:gaz))', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@c:baz (@a:foo (@b:bar (@c:baz @d:gaz)))', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@b:bar (@a:foo (@c:baz @d:gaz))', 'nocontent'),
+                r.execute_command('ft.search', 'idx', '@d:gaz (@a:foo (@c:baz @b:bar))', 'nocontent'),
+                r.execute_command('ft.search', 'idx', 'foo (bar baz gaz)', 'nocontent'),
+                r.execute_command('ft.search', 'idx', 'foo (bar (baz gaz))', 'nocontent'),
+                r.execute_command('ft.search', 'idx', 'foo (bar (foo bar) (foo bar))', 'nocontent'),
+                r.execute_command('ft.search', 'idx', 'foo (foo (bar baz (gaz)))', 'nocontent'),
+                r.execute_command('ft.search', 'idx', 'foo (foo (bar (baz (gaz (foo bar (gaz))))))', 'nocontent')]
+            
+            for r in res:
+                self.assertListEqual(res[0], r)
+            
+
+
 
     def testInKeys(self):
         with self.redis() as r:
@@ -1139,6 +1169,20 @@ class SearchTestCase(ModuleTestCase('../redisearch.so')):
             res_name = self.cmd('ft.search', 'idx', '@name:location')
             self.assertEqual(0, res_name[0])
             self.assertEqual(1, res_body[0])
+
+    def testSearchNonexistField(self):
+        # GH Issue 133
+        self.cmd('ft.create', 'idx', 'schema', 'title', 'text',
+                 'weight', 5.0, 'body', 'text', 'url', 'text')
+        self.cmd('ft.add', 'idx', 'd1', 1.0, 'nosave', 'fields', 'title',
+                 'hello world', 'body', 'lorem dipsum', 'place', '-77.0366 38.8977')
+        self.cmd('ft.search', 'idx', 'Foo', 'GEOFILTER', 'place', '-77.0366', '38.8977', '1', 'km')
+
+    def testSortbyMissingField(self):
+        # GH Issue 131
+        self.cmd('ft.create', 'ix', 'schema', 'txt', 'text', 'num', 'numeric', 'sortable')
+        self.cmd('ft.add', 'ix', 'doc1', 1.0, 'fields', 'txt', 'foo')
+        self.cmd('ft.search', 'ix', 'foo', 'sortby', 'num')
 
 
 def grouper(iterable, n, fillvalue=None):
